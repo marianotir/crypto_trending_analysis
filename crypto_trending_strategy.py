@@ -150,22 +150,9 @@ def main():
         #coin = coin_list[0]
         df_coin = df_top[df_top['coin_id']==coin]
         df_coin.reset_index(drop=True, inplace=True)
-        # idea put this part into a function then it is easy to change the model
         df_predict = df_coin[['rank']]
 
-        for i in range(1,rolling_window):
-            column_name = 't-'+str(i)
-            df_predict[column_name] = df_predict['rank'].shift(i)
-
-        df_predict.dropna(axis=0, inplace=True)
-
-        X_train = df_predict.iloc[:,1:]
-        y_train = df_predict[['rank']]
-        X_pred  = df_predict.iloc[-1:,0:-1]
-
-        regr = linear_model.LinearRegression()
-        regr.fit(X_train, y_train)
-        y_pred = regr.predict(X_pred)
+        y_pred = coin_predict(df_predict)
 
         if(float(y_pred)>=float(y_train[-1:].values)):  # note this needs to be changed
             df_top.loc[df_top.coin_id==coin,'Forecast'] = 1
