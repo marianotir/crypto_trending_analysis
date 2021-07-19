@@ -31,17 +31,8 @@ def connect_tg():
 
 def send_message(value):
 
-    # message bot
-    # Note this info should be part of the config file
-    api_messages = '1823897212:AAG-arikVtpOO8zGZfkkoCKo9I1XzbYd2iA'
-    chat_id_messages = str(556212849)
-
-    # alerts bot
-    api_alerts = '1683755311:AAFsOuP40Doy12JfTiFNzyIue2Fn_0XzWUg'
-    chat_id_alerts = str(591016753)
-
-    channel_api = 'bot'+ api_messages
-    chat_id = chat_id_messages
+    channel_api = 'bot'+ config.api_messages
+    chat_id = config.chat_id_messages
     url = 'https://api.telegram.org/'+channel_api+'/sendMessage?chat_id=-'+chat_id+'&text="{}"'.format(value)
     requests.get(url)
 
@@ -91,11 +82,11 @@ def time_series_to_ml(data,rolling_window):
     return data
 
 
-def coin_predict(data):
+def coin_predict(data,rolling_window):
 
     data = df_coin[['rank']]
 
-    data = time_series_to_ml(data)
+    data = time_series_to_ml(data,rolling_window)
 
     data.dropna(axis=0, inplace=True)
 
@@ -116,9 +107,13 @@ def main():
     client = connect_tg()
     client.connect()
 
+    send_message('Connection ok: \n Tracking trending coins begins')
+
+    #while True:
     count = 0
     while count < 6:
 
+        count+=1
         data = init_collect_data()
 
         df_trending = get_trending(data)
@@ -131,82 +126,72 @@ def main():
             df_top = df_trending
             df_top['Iter'] = 1
 
-        count+=1
+
+        # df_top['Count'] = df_top.groupby(["Iter"]).coin_id.transform('count')
+
+        df_top['Count'] = df_top.groupby(["coin_id"]).name.transform('count')
+
+
         time.sleep(100)
 
+        df_top['Forecast'] = 0
+        coin_list = df_top[df_top['Count']>4].coin_id.unique().tolist()
+
+        rolling_window = 4
+
+        for coin in coin_list:
+
+            #coin = coin_list[0]
+            df_coin = df_top[df_top['coin_id']==coin]
+            df_coin.reset_index(drop=True, inplace=True)
+            df_predict = df_coin[['rank']]
+
+            y_pred = coin_predict(df_predict,rolling_window)
+
+            if(float(y_pred)>=float(y_train[-1:].values)):  # note this needs to be changed
+                df_top.loc[df_top.coin_id==coin,'Forecast'] = 1
+                df_top.loc[df_top.coin_id==coin,'rank_fore'] = y_pred
 
 
-    df_top['Count'] = df_top.groupby(["Iter"]).coin_id.transform('count')
+        coins_trending_up = df_top[df_top['Forecast']==1].name.unique().tolist()
+
+        if len(coins_trending_up)>0:
+            text = ''
+            coin_count = 0
+            for coin in coins_trending_up:
+                name = coin
+                coin_count+=1
+                market_cap_rank = df_top[(df_top.name==name) & (df_top.Iter==df_top['Iter'].max())].market_cap_rank.unique()
+                rank = df_top[(df_top.name==name) & (df_top.Iter==df_top['Iter'].max())]['rank'].unique()
+                rank_fore = df_top[df_top.name==name].rank_fore.unique()
+                text+= '\n'+str(coin_count)+': \n Coin: ' + name + ' market_cap_rank: ' + str(market_cap_rank) + '\n Rank: ' + str(rank) + ' \n Rank fore: ' + str(rank_fore)
+
+            send_text = 'Coins trending up are: \n' + text
+            send_message(text)
 
 
-
-    df_top['Forecast'] = 0
-    coin_list = df_top[df_top['Count']>4].coin_id.unique().tolist()
-
-    rolling_window = 4
-
-    for coin in coin_list:
-
-        #coin = coin_list[0]
-        df_coin = df_top[df_top['coin_id']==coin]
-        df_coin.reset_index(drop=True, inplace=True)
-        df_predict = df_coin[['rank']]
-
-        y_pred = coin_predict(df_predict)
-
-        if(float(y_pred)>=float(y_train[-1:].values)):  # note this needs to be changed
-            df_top.loc[df_top.coin_id==coin,'Forecast'] = 1
-            df_top.loc[df_top.coin_id==coin,'rank_fore'] = y_pred
+        df_top['is_new'] = 0
+        df_top.loc[(df_top['Count']==1) & (df_top['Iter']==df_top['Iter'].max()),'is_new'] = 1
+        coins_new = df_top[df_top['is_new']==1].coin_id.unique().tolist()
 
 
-    coins_trending_up = df_top[df_top['Forecast']==1].name.unique().tolist()
+        if len(coins_new)>0:
+            text = ''
+            coin_count = 0
+            for coin in coins_new:
+                name = coin
+                coin_count+=1
+                market_cap_rank = df_top[(df_top.name==name) & (df_top.Iter==df_top['Iter'].max())].market_cap_rank.unique()
+                rank = df_top[(df_top.name==name) & (df_top.Iter==df_top['Iter'].max())]['rank'].unique()
+                rank_fore = df_top[df_top.name==name].rank_fore.unique()
+                text+= '\n'+str(coin_count)+': \n Coin: ' + name + ' market_cap_rank: ' + str(market_cap_rank) + '\n Rank: ' + str(rank) + ' \n Rank fore: ' + str(rank_fore)
 
-    if len(coins_trending_up)>0:
-        text = ''
-        coin_count = 0
-        for coin in coins_trending_up:
-            name = coin
-            coin_count+=1
-            market_cap_rank = df_top[(df_top.name==name) & (df_top.Iter==df_top['Iter'].max())].market_cap_rank.unique()
-            rank = df_top[(df_top.name==name) & (df_top.Iter==df_top['Iter'].max())]['rank'].unique()
-            rank_fore = df_top[df_top.name==name].rank_fore.unique()
-            text+= '\n'+str(coin_count)+': \n Coin: ' + name + ' market_cap_rank: ' + str(market_cap_rank) + '\n Rank: ' + str(rank) + ' \n Rank fore: ' + str(rank_fore)
-
-        send_text = 'Coins trending up are: \n' + text
-        send_message(text)
+            send_text = 'Coins new are: \n' + text
+            send_message(text)
 
 
-    df_top['is_new'] = 0
-    df_top.loc[(df_top['Count']==1) & (df_top['Iter']==df_top['Iter'].max()),'is_new'] = 1
-    coins_new = df_top[df_top['is_new']==1].coin_id.unique().tolist()
+        time.sleep(100)
 
-
-    if len(coins_new)>0:
-        text = ''
-        coin_count = 0
-        for coin in coins_new:
-            name = coin
-            coin_count+=1
-            market_cap_rank = df_top[(df_top.name==name) & (df_top.Iter==df_top['Iter'].max())].market_cap_rank.unique()
-            rank = df_top[(df_top.name==name) & (df_top.Iter==df_top['Iter'].max())]['rank'].unique()
-            rank_fore = df_top[df_top.name==name].rank_fore.unique()
-            text+= '\n'+str(coin_count)+': \n Coin: ' + name + ' market_cap_rank: ' + str(market_cap_rank) + '\n Rank: ' + str(rank) + ' \n Rank fore: ' + str(rank_fore)
-
-        send_text = 'Coins new are: \n' + text
-        send_message(text)
-
-
-
-
-    # Idea
-    #  add a dashboard where the ranking can be seen for the coins
-
-
-
-
-
-
-    pass
 
 
 if __name__ == "__main__":
