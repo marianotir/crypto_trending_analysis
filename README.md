@@ -1,4 +1,4 @@
-# trending_analysis
+# crypto_trending_analysis
 Analyze Trending coins in coingecko
 
 The script analyze current trending coins in coingecko and forecast future trending positions. 
